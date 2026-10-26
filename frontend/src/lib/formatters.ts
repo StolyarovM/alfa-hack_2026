@@ -1,0 +1,3 @@
+
+export const money = (n: number) => new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(n);
+export const dateTime = (s: string) => new Date(s).toLocaleString('ru-RU');

@@ -1,0 +1,23 @@
+
+{
+  "7701234567": {
+    "business_type": "ИП",
+    "business_age_months": 24,
+    "industry": "Онлайн-торговля",
+    "monthly_turnover": 400000,
+    "employees": 3,
+    "active_credits": 0,
+    "bank_account_months": 12,
+    "registry_status": "ACTIVE"
+  },
+  "7801234567": {
+    "business_type": "ИП",
+    "business_age_months": 48,
+    "industry": "Услуги",
+    "monthly_turnover": 800000,
+    "employees": 5,
+    "active_credits": 1,
+    "bank_account_months": 36,
+    "registry_status": "ACTIVE"
+  }
+}

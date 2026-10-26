@@ -1,0 +1,10 @@
+
+from enum import StrEnum
+class ApplicationStatus(StrEnum):
+    SUBMITTED = "SUBMITTED"
+    DATA_CHECK = "DATA_CHECK"
+    EXTERNAL_CHECKS = "EXTERNAL_CHECKS"
+    SCORING = "SCORING"
+    RESULT_READY = "RESULT_READY"
+    CHECK_ERROR = "CHECK_ERROR"
+    SCORING_ERROR = "SCORING_ERROR"

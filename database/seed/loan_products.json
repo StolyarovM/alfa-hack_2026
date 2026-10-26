@@ -1,0 +1,6 @@
+
+[
+  {"id":"working-capital","name":"Кредит на оборотные средства","type":"Оборотный","min_amount":100000,"max_amount":10000000,"term_months":36},
+  {"id":"equipment","name":"Кредит на оборудование","type":"Инвестиционный","min_amount":300000,"max_amount":20000000,"term_months":60},
+  {"id":"growth","name":"Кредит на развитие бизнеса","type":"Развитие","min_amount":200000,"max_amount":15000000,"term_months":48}
+]

@@ -1,0 +1,75 @@
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-credit}
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app_local_only}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-credit}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mock-services:
+    build: ./mock-services
+    environment:
+      PORT: 8001
+    ports:
+      - "8001:8001"
+
+  scoring-service:
+    build: ./scoring-service
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    ports:
+      - "9562:9562"
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://app:app_local_only@db:5432/credit}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-local-development-secret-change-me}
+      MOCK_API_URL: ${MOCK_API_URL:-http://mock-services:8001}
+      SCORING_API_URL: ${SCORING_API_URL:-https://bless.fxtun.dev/score}
+      SCORING_TIMEOUT_SECONDS: ${SCORING_TIMEOUT_SECONDS:-15}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      mock-services:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000/api/v1}
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  ollama_data:
+
