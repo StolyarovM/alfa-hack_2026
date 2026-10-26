@@ -1,100 +1,102 @@
-
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { getApplication, type Application } from '../api/applications';
+
+import {
+  getApplication,
+  chatWithApplication,
+  type Application,
+} from '../api/applications';
+
 import { money, dateTime } from '../lib/formatters';
 
-function getStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    SUBMITTED: 'Заявка принята',
-    DATA_CHECK: 'Проверяем данные компании',
-    EXTERNAL_CHECKS: 'Выполняем проверки',
-    SCORING: 'Оцениваем заявку',
-    RESULT_READY: 'Результат получен',
-    CHECK_ERROR: 'Ошибка проверки данных',
-    SCORING_ERROR: 'Не удалось обработать заявку',
-  };
-
-  return labels[status] || 'Заявка обрабатывается';
-}
-
-function getDecision(outcome: string | null | undefined, status: string) {
-  const value = (outcome || '').toLowerCase();
-
-  if (value.includes('отказ')) {
-    return {
-      title: 'В кредите отказано',
-      description: 'По результатам оценки заявка получила отказ.',
-      type: 'rejected',
-    };
-  }
-
-  if (
-    value.includes('одобр') ||
-    value.includes('приемлемый риск')
-  ) {
-    return {
-      title: 'Кредит предварительно одобрен',
-      description: 'Скоринговая модель вернула положительное решение.',
-      type: 'approved',
-    };
-  }
-
-  if (
-    value.includes('дополнительн') ||
-    value.includes('других условиях')
-  ) {
-    return {
-      title: 'Требуется дополнительное рассмотрение',
-      description:
-        'Рекомендуется уточнить данные или рассмотреть другие условия финансирования.',
-      type: 'review',
-    };
-  }
-
-  if (status === 'SCORING_ERROR' || status === 'CHECK_ERROR') {
-    return {
-      title: 'Не удалось получить результат',
-      description:
-        'При обработке заявки произошла ошибка. Попробуйте позже.',
-      type: 'review',
-    };
-  }
-
-  if (status === 'RESULT_READY') {
-    return {
-      title: 'Результат оценки получен',
-      description:
-        'Обработка завершена, но решение не удалось определить однозначно.',
-      type: 'review',
-    };
-  }
-
-  return {
-    title: 'Заявка находится на рассмотрении',
-    description:
-      'Дождитесь завершения проверок. Результат появится на этой странице.',
-    type: 'review',
-  };
-}
+type ChatMessage = {
+  role: 'user' | 'assistant';
+  text: string;
+};
 
 export default function ApplicationDetailsPage() {
   const { id = '' } = useParams();
+
   const [item, setItem] = useState<Application | null>(null);
   const [error, setError] = useState('');
 
+  const [question, setQuestion] = useState('');
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      role: 'assistant',
+      text:
+        'Здравствуйте! Я ИИ-ассистент кредитного кабинета. ' +
+        'Могу объяснить статус заявки и помочь разобраться ' +
+        'в доступной информации о результате проверки.',
+    },
+  ]);
+
+  const [sending, setSending] = useState(false);
+  const [chatError, setChatError] = useState('');
+
   useEffect(() => {
-    setItem(null);
-    setError('');
+    let active = true;
 
     getApplication(id)
-      .then(setItem)
-      .catch((e) => setError(e.message));
+      .then((application) => {
+        if (active) {
+          setItem(application);
+          setError('');
+        }
+      })
+      .catch((e: Error) => {
+        if (active) {
+          setError(e.message || 'Не удалось загрузить заявку');
+        }
+      });
+
+    return () => {
+      active = false;
+    };
   }, [id]);
 
-  const decision = item
-    ? getDecision(item.outcome, item.status)
-    : null;
+  async function sendMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const text = question.trim();
+
+    if (!text || sending || !item) {
+      return;
+    }
+
+    setQuestion('');
+    setChatError('');
+
+    setMessages((current) => [
+      ...current,
+      {
+        role: 'user',
+        text,
+      },
+    ]);
+
+    setSending(true);
+
+    try {
+      const result = await chatWithApplication(id, text);
+
+      setMessages((current) => [
+        ...current,
+        {
+          role: 'assistant',
+          text: result.reply,
+        },
+      ]);
+    } catch (e) {
+      setChatError(
+        e instanceof Error
+          ? e.message
+          : 'Не удалось получить ответ ИИ-ассистента.',
+      );
+    } finally {
+      setSending(false);
+    }
+  }
 
   return (
     <>
@@ -102,7 +104,7 @@ export default function ApplicationDetailsPage() {
         ← В кабинет
       </Link>
 
-      <div className="eyebrow">Результат рассмотрения</div>
+      <div className="eyebrow">Статус заявки</div>
       <h1>Заявка №{id}</h1>
 
       {error && <p className="error">{error}</p>}
@@ -111,72 +113,160 @@ export default function ApplicationDetailsPage() {
         !error && <p>Загружаем данные…</p>
       ) : (
         <>
-          <div className="panel">
+          <section className="panel">
             <div className="section-head">
               <div>
                 <h2>{item.product_type}</h2>
-                <p className="muted">{dateTime(item.created_at)}</p>
+                <p className="muted">
+                  {dateTime(item.created_at)}
+                </p>
               </div>
 
               <span className="pill">
-                {getStatusLabel(item.status)}
+                {item.outcome || item.status}
               </span>
             </div>
 
-            <div className={`decision-result ${decision?.type}`}>
-              <h2>{decision?.title}</h2>
-              <p>{decision?.description}</p>
-            </div>
-
-            <p className="muted">Запрошенная сумма кредита</p>
             <h2>{money(item.requested_amount)}</h2>
 
             {item.risk !== null && item.risk !== undefined && (
               <p>
-                Оценка риска отказа:{' '}
-                <strong>{(item.risk * 100).toFixed(0)}%</strong>
+                Оценка риска демонстрационной модели:{' '}
+                {(item.risk * 100).toFixed(0)}%
               </p>
             )}
+          </section>
 
-            {item.scoring_reason && (
-              <div className="notice">
-                <strong>Причина отказа:</strong> {item.scoring_reason}
-              </div>
-            )}
-
-            {item.conditions && (
-              <div className="notice">
-                <strong>Возможные условия:</strong> {item.conditions}
-              </div>
-            )}
-          </div>
-
-          <div className="panel">
+          <section className="panel">
             <h2>Этапы проверки</h2>
 
-            {(item.checks || []).length === 0 ? (
-              <p className="muted">
-                Информация о проверках пока отсутствует.
+            <ol className="tracker">
+              {(item.checks || []).map((check, index) => (
+                <li key={`${check.name}-${index}`}>
+                  <span
+                    className={`dot ${check.status.toLowerCase()}`}
+                  />
+
+                  <div>
+                    <strong>{check.name}</strong>
+                    <p className="muted">
+                      {check.message || check.status}
+                    </p>
+                  </div>
+
+                  <span className="pill">
+                    {check.status}
+                  </span>
+                </li>
+              ))}
+            </ol>
+
+            <p className="muted">
+              Результат является демонстрационным и не является
+              офертой или окончательным решением банка.
+            </p>
+          </section>
+
+          <section className="panel">
+            <h2>ИИ-ассистент</h2>
+
+            <p className="muted">
+              Задайте вопрос о своей заявке. Ассистент использует
+              результат проверки и модель Qwen через Ollama.
+            </p>
+
+            <div
+              role="log"
+              aria-live="polite"
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12,
+                marginTop: 20,
+                marginBottom: 20,
+              }}
+            >
+              {messages.map((message, index) => (
+                <div
+                  key={`${message.role}-${index}`}
+                  style={{
+                    alignSelf:
+                      message.role === 'user'
+                        ? 'flex-end'
+                        : 'flex-start',
+                    maxWidth: '85%',
+                    padding: 12,
+                    borderRadius: 12,
+                    background:
+                      message.role === 'user'
+                        ? '#eef2f7'
+                        : '#f6f6f6',
+                    overflowWrap: 'anywhere',
+                    whiteSpace: 'pre-wrap',
+                  }}
+                >
+                  <strong>
+                    {message.role === 'user'
+                      ? 'Вы'
+                      : 'ИИ-ассистент'}
+                  </strong>
+
+                  <p style={{ marginBottom: 0 }}>
+                    {message.text}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            {chatError && (
+              <p className="error" role="alert">
+                {chatError}
               </p>
-            ) : (
-              <ol className="tracker">
-                {(item.checks || []).map((check, index) => (
-                  <li key={index}>
-                    <span
-                      className={`dot ${check.status.toLowerCase()}`}
-                    />
-                    <div>
-                      <strong>{check.name}</strong>
-                      <p className="muted">
-                        {check.message || check.status}
-                      </p>
-                    </div>
-                    <span className="pill">{check.status}</span>
-                  </li>
-                ))}
-              </ol>
             )}
-          </div>
+
+            <form
+              onSubmit={sendMessage}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12,
+              }}
+            >
+              <textarea
+                value={question}
+                onChange={(event) =>
+                  setQuestion(event.target.value)
+                }
+                placeholder="Например: объясни статус моей заявки"
+                maxLength={2000}
+                rows={3}
+                disabled={sending}
+                required
+                style={{
+                  boxSizing: 'border-box',
+                  width: '100%',
+                  resize: 'vertical',
+                }}
+              />
+
+              <button
+                type="submit"
+                disabled={
+                  sending || !question.trim() || !item
+                }
+              >
+                {sending
+                  ? 'Модель готовит ответ…'
+                  : 'Отправить вопрос'}
+              </button>
+            </form>
+
+            <p className="muted">
+              Ответы генерируются искусственным интеллектом и
+              могут содержать ошибки. Не отправляйте пароли,
+              платёжные реквизиты и другие секретные данные.
+            </p>
+          </section>
         </>
       )}
     </>
